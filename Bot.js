@@ -6,6 +6,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
 let latestPostId = null;
 let channelConfig = {};
+let userSteps = {}; // To track user steps
 
 // Load channelConfig from file
 const fs = require('fs');
@@ -27,44 +28,27 @@ bot.on('message', (msg) => {
         console.log('Forwarded message from channel. Channel ID:', msg.forward_from_chat.id);
         bot.sendMessage(msg.chat.id, `Channel ID: ${msg.forward_from_chat.id}`);
     }
-});
 
-bot.onText(/\/setchannel (.+)/, (msg, match) => {
     const chatId = msg.chat.id;
-    const [channelId, dropType] = match[1].split(' ');
-
-    channelConfig[chatId] = { channelId, dropType };
-    saveChannelConfig();
-
-    bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
-});
-
-bot.onText(/\/latest (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const dropType = match[1];
-
-    try {
-        const url = `${process.env.BACKEND_URL}/api/nftdrops/approved?droptype=${dropType}`;
-        const response = await axios.get(url);
-        const posts = response.data;
-
-        if (posts.length === 0) {
-            bot.sendMessage(chatId, 'No posts available.');
-            return;
-        }
-
-        const latestPost = posts[0];
-        const message = formatPostMessage(latestPost);
-        bot.sendMessage(chatId, message);
-    } catch (error) {
-        console.error('Error fetching posts:', error);
-        bot.sendMessage(chatId, `Error fetching posts: ${error.message}`);
+    if (userSteps[chatId]) {
+        handleStepInput(chatId, msg.text);
     }
+});
+
+bot.onText(/\/setchannel/, (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, 'Please provide the channel ID:');
+    userSteps[chatId] = { step: 'setChannelId' };
+});
+
+bot.onText(/\/latest/, (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, 'Please provide the drop type (new mint, auction, airdrop, any):');
+    userSteps[chatId] = { step: 'latestDropType' };
 });
 
 bot.onText(/\/alldrops/, async (msg) => {
     const chatId = msg.chat.id;
-
     try {
         const url = `${process.env.BACKEND_URL}/api/nftdrops/approved`;
         const response = await axios.get(url);
@@ -82,6 +66,46 @@ bot.onText(/\/alldrops/, async (msg) => {
         bot.sendMessage(chatId, `Error fetching posts: ${error.message}`);
     }
 });
+
+const handleStepInput = (chatId, input) => {
+    const userStep = userSteps[chatId];
+    if (userStep.step === 'setChannelId') {
+        userSteps[chatId].channelId = input;
+        bot.sendMessage(chatId, 'Please provide the drop type (new mint, auction, airdrop, any):');
+        userSteps[chatId].step = 'setDropType';
+    } else if (userStep.step === 'setDropType') {
+        const channelId = userSteps[chatId].channelId;
+        const dropType = input;
+        channelConfig[chatId] = { channelId, dropType };
+        saveChannelConfig();
+        bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
+        delete userSteps[chatId];
+    } else if (userStep.step === 'latestDropType') {
+        const dropType = input;
+        fetchLatestDrop(chatId, dropType);
+        delete userSteps[chatId];
+    }
+};
+
+const fetchLatestDrop = async (chatId, dropType) => {
+    try {
+        const url = `${process.env.BACKEND_URL}/api/nftdrops/approved?droptype=${dropType}`;
+        const response = await axios.get(url);
+        const posts = response.data;
+
+        if (posts.length === 0) {
+            bot.sendMessage(chatId, 'No posts available.');
+            return;
+        }
+
+        const latestPost = posts[0];
+        const message = formatPostMessage(latestPost);
+        bot.sendMessage(chatId, message);
+    } catch (error) {
+        console.error('Error fetching posts:', error);
+        bot.sendMessage(chatId, `Error fetching posts: ${error.message}`);
+    }
+};
 
 const formatPostMessage = (post) => {
     let message = `*${post.projectName}*\n`;
