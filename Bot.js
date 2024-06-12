@@ -35,8 +35,22 @@ bot.on('message', (msg) => {
     }
 });
 
-bot.onText(/\/setchannel/, (msg) => {
+bot.onText(/\/setchannel(\s+(.+))?/, (msg, match) => {
     const chatId = msg.chat.id;
+
+    if (match[2]) {
+        // Directly set the channel and drop type if provided
+        const [channelId, dropType] = match[2].split(' ');
+
+        if (channelId && dropType) {
+            channelConfig[chatId] = { channelId, dropType };
+            saveChannelConfig();
+            bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
+            return;
+        }
+    }
+
+    // Prompt for channel ID if not provided
     bot.sendMessage(chatId, 'Please provide the channel ID:');
     userSteps[chatId] = { step: 'setChannelId' };
 });
