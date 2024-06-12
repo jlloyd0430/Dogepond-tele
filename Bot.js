@@ -28,7 +28,7 @@ bot.on('message', (msg) => {
         console.log('Forwarded message from channel. Channel ID:', msg.forward_from_chat.id);
         bot.sendMessage(msg.chat.id, `Channel ID: ${msg.forward_from_chat.id}`);
     }
-    
+
     const chatId = msg.chat.id;
     if (userSteps[chatId]) {
         handleStepInput(chatId, msg.text);
@@ -43,7 +43,7 @@ bot.onText(/\/setchannel/, (msg) => {
 
 bot.onText(/\/latest/, (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, 'Please provide the drop type:');
+    bot.sendMessage(chatId, 'Please provide the drop type (new mint, auction, airdrop, any):');
     userSteps[chatId] = { step: 'latestDropType' };
 });
 
