@@ -1,26 +1,23 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
+// MongoDB setup
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+
+const channelSchema = new mongoose.Schema({
+    chatId: String,
+    channelId: String,
+    dropType: String,
+});
+
+const ChannelConfig = mongoose.model('ChannelConfig', channelSchema);
+
 let latestPostId = null;
-let channelConfig = {};
 let userSteps = {}; // To track user steps
-
-// Load channelConfig from file
-const fs = require('fs');
-const path = require('path');
-const channelConfigPath = path.join(__dirname, 'channelConfig.json');
-
-if (fs.existsSync(channelConfigPath)) {
-    const data = fs.readFileSync(channelConfigPath);
-    channelConfig = JSON.parse(data);
-}
-
-const saveChannelConfig = () => {
-    fs.writeFileSync(channelConfigPath, JSON.stringify(channelConfig, null, 2));
-};
 
 // Add handler to get the channel ID when a message is forwarded
 bot.on('message', (msg) => {
@@ -35,7 +32,7 @@ bot.on('message', (msg) => {
     }
 });
 
-bot.onText(/\/setchannel(\s+(.+))?/, (msg, match) => {
+bot.onText(/\/setchannel(\s+(.+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
 
     if (match[2]) {
@@ -43,8 +40,11 @@ bot.onText(/\/setchannel(\s+(.+))?/, (msg, match) => {
         const [channelId, dropType] = match[2].split(' ');
 
         if (channelId && dropType) {
-            channelConfig[chatId] = { channelId, dropType };
-            saveChannelConfig();
+            await ChannelConfig.findOneAndUpdate(
+                { chatId },
+                { channelId, dropType },
+                { upsert: true, new: true }
+            );
             bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
             return;
         }
@@ -81,7 +81,7 @@ bot.onText(/\/alldrops/, async (msg) => {
     }
 });
 
-const handleStepInput = (chatId, input) => {
+const handleStepInput = async (chatId, input) => {
     const userStep = userSteps[chatId];
     if (userStep.step === 'setChannelId') {
         userSteps[chatId].channelId = input;
@@ -90,8 +90,11 @@ const handleStepInput = (chatId, input) => {
     } else if (userStep.step === 'setDropType') {
         const channelId = userSteps[chatId].channelId;
         const dropType = input;
-        channelConfig[chatId] = { channelId, dropType };
-        saveChannelConfig();
+        await ChannelConfig.findOneAndUpdate(
+            { chatId },
+            { channelId, dropType },
+            { upsert: true, new: true }
+        );
         bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
         delete userSteps[chatId];
     } else if (userStep.step === 'latestDropType') {
@@ -178,10 +181,9 @@ const startPolling = () => {
                     console.log(`New post found: ${latestPost._id}`);
                     latestPostId = latestPost._id;
 
-                    for (const chatId in channelConfig) {
-                        const config = channelConfig[chatId];
-                        const channelId = config.channelId;
-                        const dropType = config.dropType;
+                    const channelConfigs = await ChannelConfig.find();
+                    for (const config of channelConfigs) {
+                        const { chatId, channelId, dropType } = config;
 
                         if (dropType !== 'any' && latestPost.dropType !== dropType) {
                             console.log(`Skipping post of type ${latestPost.dropType} for chat ${chatId} with configured type ${dropType}`);
