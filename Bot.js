@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const sharp = require('sharp');
 require('dotenv').config();
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
@@ -74,7 +75,7 @@ bot.onText(/\/alldrops/, async (msg) => {
         }
 
         const messages = posts.map((post) => formatPostMessage(post)).join('\n\n');
-        bot.sendMessage(chatId, messages);
+        bot.sendMessage(chatId, messages, { parse_mode: 'MarkdownV2' });
     } catch (error) {
         console.error('Error fetching posts:', error);
         bot.sendMessage(chatId, `Error fetching posts: ${error.message}`);
@@ -113,28 +114,28 @@ const fetchLatestDrop = async (chatId, dropType) => {
         }
 
         const latestPost = posts[0];
-        const message = formatPostMessage(latestPost);
-        bot.sendMessage(chatId, message);
+        const message = await formatPostMessage(latestPost);
+        bot.sendMessage(chatId, message, { parse_mode: 'MarkdownV2' });
     } catch (error) {
         console.error('Error fetching posts:', error);
         bot.sendMessage(chatId, `Error fetching posts: ${error.message}`);
     }
 };
 
-const formatPostMessage = (post) => {
-    let message = `*${post.projectName}*\n`;
-    message += `_${post.description || 'No description provided.'}_\n\n`;
-    message += `*Drop Type:* ${post.dropType}\n`;
+const formatPostMessage = async (post) => {
+    let message = `*${escapeMarkdown(post.projectName)}*\n`;
+    message += `_${escapeMarkdown(post.description || 'No description provided.')}_\n\n`;
+    message += `*Drop Type:* ${escapeMarkdown(post.dropType)}\n`;
     message += `*Date:* ${post.date === 'TBA' ? 'TBA' : new Date(post.date).toLocaleDateString()}\n`;
-    message += `*Time:* ${post.time}\n`;
-    message += `*Supply:* ${post.supply}\n`;
-    message += `*Likes:* ${post.likes.length}\n`;
+    message += `*Time:* ${escapeMarkdown(post.time)}\n`;
+    message += `*Supply:* ${escapeMarkdown(post.supply.toString())}\n`;
+    message += `*Likes:* ${escapeMarkdown(post.likes.length.toString())}\n`;
 
     if (post.dropType === 'new mint') {
-        message += `*Price:* ${post.price !== undefined ? post.price : 'N/A'}\n`;
-        message += `*Whitelist Price:* ${post.wlPrice !== undefined ? post.wlPrice : 'N/A'}\n`;
+        message += `*Price:* ${post.price !== undefined ? escapeMarkdown(post.price.toString()) : 'N/A'}\n`;
+        message += `*Whitelist Price:* ${post.wlPrice !== undefined ? escapeMarkdown(post.wlPrice.toString()) : 'N/A'}\n`;
     } else if (post.dropType === 'auction') {
-        message += `*Starting Price:* ${post.startingPrice !== undefined ? post.startingPrice : 'N/A'}\n`;
+        message += `*Starting Price:* ${post.startingPrice !== undefined ? escapeMarkdown(post.startingPrice.toString()) : 'N/A'}\n`;
         message += `*Marketplace Link:* ${post.marketplaceLink ? `[Link](${post.marketplaceLink})` : 'N/A'}\n`;
     } else if (post.dropType === 'airdrop') {
         message += `*Project Link:* ${post.projectLink ? `[Link](${post.projectLink})` : 'N/A'}\n`;
@@ -145,9 +146,45 @@ const formatPostMessage = (post) => {
     if (post.telegram) message += `*Telegram:* [Telegram](${post.telegram})\n`;
     if (post.discord) message += `*Discord:* [Discord](${post.discord})\n`;
 
-    if (post.image) message += `\n![Image](${post.image})\n`;
+    if (post.image) {
+        const processedImageUrl = await processImage(post.image);
+        message += `\n[Image](${processedImageUrl})\n`;
+    }
 
     return message;
+};
+
+const escapeMarkdown = (text) => {
+    return text.replace(/([_*\[\]()~`>#+-=|{}.!])/g, '\\$1');
+};
+
+const processImage = async (imageUrl) => {
+    try {
+        const response = await axios({
+            url: imageUrl,
+            responseType: 'arraybuffer'
+        });
+        const imageBuffer = Buffer.from(response.data, 'binary');
+
+        const processedImageBuffer = await sharp(imageBuffer)
+            .extend({
+                top: 10,
+                bottom: 10,
+                left: 10,
+                right: 10,
+                background: { r: 218, g: 165, b: 32, alpha: 1 } // goldenrod color
+            })
+            .toBuffer();
+
+        const processedImagePath = path.join(__dirname, 'processedImage.png');
+        fs.writeFileSync(processedImagePath, processedImageBuffer);
+
+        const processedImageUrl = `file://${processedImagePath}`;
+        return processedImageUrl;
+    } catch (error) {
+        console.error('Error processing image:', error);
+        return imageUrl;
+    }
 };
 
 const startPolling = () => {
@@ -175,9 +212,9 @@ const startPolling = () => {
                             continue;
                         }
 
-                        const message = formatPostMessage(latestPost);
+                        const message = await formatPostMessage(latestPost);
                         console.log(`Sending post to channel ${channelId}`);
-                        bot.sendMessage(channelId, message);
+                        bot.sendMessage(channelId, message, { parse_mode: 'MarkdownV2' });
                     }
                 }
             }
