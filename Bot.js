@@ -119,6 +119,9 @@ const fetchLatestDrop = async (chatId, dropType) => {
             return;
         }
 
+        // Sort posts by date in descending order to get the latest post
+        posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+
         const latestPost = posts[0];
         const message = formatPostMessage(latestPost);
         bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
