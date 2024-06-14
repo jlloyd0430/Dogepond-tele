@@ -1,22 +1,23 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const mongoose = require('mongoose');
 require('dotenv').config();
+
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
-let latestPostId = null;
-let channelConfig = {};
+// MongoDB setup
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 
-// Load channelConfig from file
-const fs = require('fs');
-const path = require('path');
-const channelConfigPath = path.join(__dirname, 'channelConfig.json');
-if (fs.existsSync(channelConfigPath)) {
-    const data = fs.readFileSync(channelConfigPath);
-    channelConfig = JSON.parse(data);
-}
-const saveChannelConfig = () => {
-    fs.writeFileSync(channelConfigPath, JSON.stringify(channelConfig, null, 2));
-};
+const channelSchema = new mongoose.Schema({
+    chatId: String,
+    channelId: String,
+    dropType: String,
+});
+
+const ChannelConfig = mongoose.model('ChannelConfig', channelSchema);
+
+let latestPostId = null;
+
 // Add handler to get the channel ID when a message is forwarded
 bot.on('message', (msg) => {
     if (msg.forward_from_chat) {
@@ -25,14 +26,21 @@ bot.on('message', (msg) => {
     }
 });
 
-bot.onText(/\/setchannel (.+)/, (msg, match) => {
+bot.onText(/\/setchannel (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const [channelId, dropType] = match[1].split(' ');
 
-    channelConfig[chatId] = { channelId, dropType };
-    saveChannelConfig();
-
-    bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
+    try {
+        await ChannelConfig.findOneAndUpdate(
+            { chatId },
+            { channelId, dropType },
+            { upsert: true, new: true }
+        );
+        bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
+    } catch (error) {
+        console.error('Error setting channel:', error);
+        bot.sendMessage(chatId, 'Failed to set the post channel.');
+    }
 });
 
 bot.onText(/\/latest (.+)/, async (msg, match) => {
@@ -103,6 +111,7 @@ const formatPostMessage = (post) => {
     if (post.image) message += `\n![Image](${post.image})\n`;
     return message;
 };
+
 const startPolling = () => {
     setInterval(async () => {
         try {
@@ -115,14 +124,16 @@ const startPolling = () => {
                 if (latestPost._id !== latestPostId) {
                     console.log(`New post found: ${latestPost._id}`);
                     latestPostId = latestPost._id;
-                    for (const chatId in channelConfig) {
-                        const config = channelConfig[chatId];
-                        const channelId = config.channelId;
-                        const dropType = config.dropType;
+
+                    const channelConfigs = await ChannelConfig.find();
+                    for (const config of channelConfigs) {
+                        const { chatId, channelId, dropType } = config;
+
                         if (dropType !== 'any' && latestPost.dropType !== dropType) {
                             console.log(`Skipping post of type ${latestPost.dropType} for chat ${chatId} with configured type ${dropType}`);
                             continue;
                         }
+
                         const message = formatPostMessage(latestPost);
                         console.log(`Sending post to channel ${channelId}`);
                         bot.sendMessage(channelId, message);
@@ -134,4 +145,5 @@ const startPolling = () => {
         }
     }, 60000);
 };
+
 startPolling();
