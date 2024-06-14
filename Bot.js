@@ -106,9 +106,13 @@ const handleStepInput = async (chatId, input) => {
 
 const fetchLatestDrop = async (chatId, dropType) => {
     try {
-        const url = `${process.env.BACKEND_URL}/api/nftdrops/approved?droptype=${dropType}`;
+        const url = `${process.env.BACKEND_URL}/api/nftdrops/approved`;
         const response = await axios.get(url);
-        const posts = response.data.filter(post => post.dropType === dropType || dropType === 'any');
+        let posts = response.data;
+
+        if (dropType.toLowerCase() !== 'any') {
+            posts = posts.filter(post => post.dropType.toLowerCase() === dropType.toLowerCase());
+        }
 
         if (posts.length === 0) {
             bot.sendMessage(chatId, 'No posts available.');
@@ -185,7 +189,7 @@ const startPolling = () => {
                     for (const config of channelConfigs) {
                         const { chatId, channelId, dropType } = config;
 
-                        if (dropType !== 'any' && latestPost.dropType !== dropType) {
+                        if (dropType !== 'any' && latestPost.dropType.toLowerCase() !== dropType) {
                             console.log(`Skipping post of type ${latestPost.dropType} for chat ${chatId} with configured type ${dropType}`);
                             continue;
                         }
