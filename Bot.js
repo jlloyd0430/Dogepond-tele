@@ -98,7 +98,7 @@ const handleStepInput = async (chatId, input) => {
         bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
         delete userSteps[chatId];
     } else if (userStep.step === 'latestDropType') {
-        const dropType = input;
+        const dropType = input.toLowerCase();
         fetchLatestDrop(chatId, dropType);
         delete userSteps[chatId];
     }
@@ -106,9 +106,9 @@ const handleStepInput = async (chatId, input) => {
 
 const fetchLatestDrop = async (chatId, dropType) => {
     try {
-        const url = `${process.env.BACKEND_URL}/api/nftdrops/approved?droptype=${dropType}`;
+        const url = `${process.env.BACKEND_URL}/api/nftdrops/approved`;
         const response = await axios.get(url);
-        const posts = response.data.filter(post => post.dropType === dropType || dropType === 'any');
+        const posts = response.data.filter(post => post.dropType.toLowerCase() === dropType || dropType === 'any');
 
         if (posts.length === 0) {
             bot.sendMessage(chatId, 'No posts available.');
@@ -185,14 +185,18 @@ const startPolling = () => {
                     for (const config of channelConfigs) {
                         const { chatId, channelId, dropType } = config;
 
-                        if (dropType !== 'any' && latestPost.dropType !== dropType) {
+                        if (dropType !== 'any' && latestPost.dropType.toLowerCase() !== dropType) {
                             console.log(`Skipping post of type ${latestPost.dropType} for chat ${chatId} with configured type ${dropType}`);
                             continue;
                         }
 
                         const message = formatPostMessage(latestPost);
                         console.log(`Sending post to channel ${channelId}`);
-                        bot.sendMessage(channelId, message, { parse_mode: 'HTML' });
+                        try {
+                            await bot.sendMessage(channelId, message, { parse_mode: 'HTML' });
+                        } catch (error) {
+                            console.error(`Failed to send message to channel ${channelId}:`, error.message);
+                        }
                     }
                 }
             }
