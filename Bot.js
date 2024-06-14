@@ -106,12 +106,15 @@ const handleStepInput = async (chatId, input) => {
 
 const fetchLatestDrop = async (chatId, dropType) => {
     try {
+        console.log(`Fetching latest drop for dropType: ${dropType}`);
         const url = `${process.env.BACKEND_URL}/api/nftdrops/approved`;
         const response = await axios.get(url);
         let posts = response.data;
+        console.log(`Fetched ${posts.length} posts from the backend`);
 
         if (dropType.toLowerCase() !== 'any') {
             posts = posts.filter(post => post.dropType.toLowerCase() === dropType.toLowerCase());
+            console.log(`Filtered posts count: ${posts.length}`);
         }
 
         if (posts.length === 0) {
@@ -121,6 +124,7 @@ const fetchLatestDrop = async (chatId, dropType) => {
 
         // Sort posts by date in descending order to get the latest post
         posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+        console.log(`Sorted posts by date, latest post date: ${posts[0].date}`);
 
         const latestPost = posts[0];
         const message = formatPostMessage(latestPost);
