@@ -20,38 +20,27 @@ let latestPostId = null;
 let userSteps = {}; // To track user steps
 
 // Add handler to get the channel ID when a message is forwarded
-bot.on('message', (msg) => {
+bot.on('message', async (msg) => {
     if (msg.forward_from_chat) {
-        console.log('Forwarded message from channel. Channel ID:', msg.forward_from_chat.id);
-        bot.sendMessage(msg.chat.id, `Channel ID: ${msg.forward_from_chat.id}`);
-    }
+        const chatId = msg.chat.id;
+        const forwardedChatId = msg.forward_from_chat.id;
+        console.log('Forwarded message from channel. Channel ID:', forwardedChatId);
+        bot.sendMessage(chatId, `Channel ID: ${forwardedChatId}`);
 
-    const chatId = msg.chat.id;
-    if (userSteps[chatId]) {
-        handleStepInput(chatId, msg.text);
+        // Update the channel ID in the database if needed
+        if (userSteps[chatId] && userSteps[chatId].step === 'setChannelId') {
+            userSteps[chatId].channelId = forwardedChatId.toString();
+            bot.sendMessage(chatId, 'Please provide the drop type (new mint, auction, airdrop, any):');
+            userSteps[chatId].step = 'setDropType';
+        }
+    } else if (userSteps[msg.chat.id]) {
+        handleStepInput(msg.chat.id, msg.text);
     }
 });
 
-bot.onText(/\/setchannel(\s+(.+))?/, async (msg, match) => {
+bot.onText(/\/setchannel/, (msg) => {
     const chatId = msg.chat.id;
-
-    if (match[2]) {
-        // Directly set the channel and drop type if provided
-        const [channelId, dropType] = match[2].split(' ');
-
-        if (channelId && dropType) {
-            await ChannelConfig.findOneAndUpdate(
-                { chatId },
-                { channelId, dropType },
-                { upsert: true, new: true }
-            );
-            bot.sendMessage(chatId, `Set the post channel to ${channelId} for ${dropType} drops`);
-            return;
-        }
-    }
-
-    // Prompt for channel ID if not provided
-    bot.sendMessage(chatId, 'Please provide the channel ID:');
+    bot.sendMessage(chatId, 'Please forward a message from the channel where you want to set the drop posts.');
     userSteps[chatId] = { step: 'setChannelId' };
 });
 
@@ -83,13 +72,9 @@ bot.onText(/\/alldrops/, async (msg) => {
 
 const handleStepInput = async (chatId, input) => {
     const userStep = userSteps[chatId];
-    if (userStep.step === 'setChannelId') {
-        userSteps[chatId].channelId = input;
-        bot.sendMessage(chatId, 'Please provide the drop type (new mint, auction, airdrop, any):');
-        userSteps[chatId].step = 'setDropType';
-    } else if (userStep.step === 'setDropType') {
+    if (userStep.step === 'setDropType') {
         const channelId = userSteps[chatId].channelId;
-        const dropType = input;
+        const dropType = input.toLowerCase();
         await ChannelConfig.findOneAndUpdate(
             { chatId },
             { channelId, dropType },
