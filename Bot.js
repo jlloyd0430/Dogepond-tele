@@ -136,7 +136,9 @@ const startPolling = () => {
 
                         const message = formatPostMessage(latestPost);
                         console.log(`Sending post to channel ${channelId}`);
-                        bot.sendMessage(channelId, message);
+                        bot.sendMessage(channelId, message).catch(err => {
+                            console.error(`Failed to send message to channel ${channelId}:`, err.message);
+                        });
                     }
                 }
             }
